@@ -9,3 +9,5 @@ The encoding will basically follow the same one in [this paper](https://arxiv.or
 ### Generating the dataset
 1. It will assume the strings are already in IPA, not the Latin alphabet.
 2. For some word w, randomly sample a word k with edit distance <= 5 to w. Also randomly sample words with edit distance > 5 to w. These sampled words will be the set of candidate words for the word w.
+
+test
