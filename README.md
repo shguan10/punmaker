@@ -6,6 +6,7 @@ After translating the phrase into IPA (International Phonetic Alphabet), it will
 ## Dependencies
 1. [eng-to-ipa-to-eng](https://github.com/shguan10/eng_to_ipa_to_eng)
 2. edlib
+3. numpy
 
 ## Specifics for the fuzzy string matching
 The encoding will basically follow the same one in [this paper](https://arxiv.org/pdf/1803.02893.pdf). Given a query string, the algorithm will retrieve the word in the dictionary with the highest cosine similarity of their encodings.
