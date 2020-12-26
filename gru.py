@@ -72,10 +72,10 @@ class Deep_Classifier(torch.nn.Module):
     self.char2num = char2num
 
   def encode(self,wipa):
+    # wipa has been translated but not one-hot encoded
     totalchars = len(self.char2num)
 
-    wipatranslated = [self.char2num(char) for char in wipa]
-    wipatranslated = [onehot(charnum,totalchars) for charnum in wipatranslated]
+    wipatranslated = [onehot(charnum,totalchars) for charnum in wipa]
 
     wipatranslated = torch.tensor(wipatranslated)
 
@@ -242,7 +242,7 @@ def train_driver(edit_ratio=0.4): # CHOO CHOO
                         datastore=datastore)
 
 
-  torch.save(model.state_dict(),"models/model_"+str(edit_ratio)+"_valacc_"+str(valacc)+".pt")
+  torch.save(model,"models/model_"+str(edit_ratio)+"_valacc_"+str(valacc)+".pt")
 
 if __name__ == '__main__':
   train_driver(edit_ratio=0.4)
