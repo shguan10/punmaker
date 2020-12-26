@@ -77,21 +77,21 @@ class Deep_Classifier(torch.nn.Module):
 
     wipatranslated = [onehot(charnum,totalchars) for charnum in wipa]
 
-    wipatranslated = torch.tensor(wipatranslated)
+    wipatranslated = torch.tensor(wipatranslated).float()
 
     # wipatranslated has shape (wordlen,totalchars)
 
-    wipatranslated = wipatranslated.reshpae(-1,1,totalchars)
+    wipatranslated = wipatranslated.reshape(-1,1,totalchars)
 
     wresult = None
 
     with torch.no_grad():
-      _,wipaf = self.f(wipatranslated).cpu().numpy()
-      wipaf = wipaf.view(self.numlayers,1,-1,self.hdim)
+      wipaf = self.f(wipatranslated)[1].cpu().numpy()
+      wipaf = wipaf.view((self.numlayers,1,-1,self.hdim))
       wipaf = wipaf[-1,0,:,:].flatten()
       
-      _,wipag = self.g(wipatranslated).cpu().numpy()
-      wipag = wipag.view(self.numlayers,1,-1,self.hdim)
+      wipag = self.g(wipatranslated)[1].cpu().numpy()
+      wipag = wipag.view((self.numlayers,1,-1,self.hdim))
       wipag = wipag[-1,0,:,:].flatten()
       
     wresult = np.concatenate((wipaf,wipag))
@@ -102,10 +102,9 @@ class Deep_Classifier(torch.nn.Module):
     # ie wipas is zeropadded but not one-hot encoded
     totalchars = len(self.char2num)
 
-    wipastranslated = [[self.char2num(char) for char in wipa] for wipa in wipas]
-    wipastranslated = [[onehot(charnum,totalchars) for charnum in wipa] for wipa in wipastranslated]
+    wipastranslated = [[onehot(charnum,totalchars) for charnum in wipa] for wipa in wipas]
 
-    wipastranslated = torch.tensor(wipastranslated)
+    wipastranslated = torch.tensor(wipastranslated).float()
 
     # wipastranslated has shape (dataset_size,wordlen,totalchars)
     wipastranslated = wipastranslated.transpose(0,1)
@@ -113,16 +112,15 @@ class Deep_Classifier(torch.nn.Module):
     wresult = None
 
     with torch.no_grad():
-      _,wipaf = self.f(wipastranslated).cpu().numpy()
-      wipaf = wipaf.view(self.numlayers,1,-1,self.hdim)
+      wipaf = self.f(wipastranslated)[1].cpu().numpy()
+      wipaf = wipaf.reshape((self.numlayers,1,-1,self.hdim))
       wipaf = wipaf[-1,0,:,:]
 
-      _,wipag = self.g(wipastranslated).cpu().numpy()
-      wipag = wipag.view(self.numlayers,1,-1,self.hdim)
+      wipag = self.g(wipastranslated)[1].cpu().numpy()
+      wipag = wipag.reshape((self.numlayers,1,-1,self.hdim))
       wipag = wipag[-1,0,:,:]
 
     print(wipaf.shape,wipag.shape)
-    pdb.set_trace()
 
     wresult = np.concatenate((wipaf,wipag),axis=1)
     print(wresult.shape)
@@ -242,7 +240,7 @@ def train_driver(edit_ratio=0.4): # CHOO CHOO
                         datastore=datastore)
 
 
-  torch.save(model,"models/model_"+str(edit_ratio)+"_valacc_"+str(valacc)+".pt")
+  torch.save(model.state_dict(),"models/model_"+str(edit_ratio)+"_valacc_"+str(valacc)+".pt")
 
 if __name__ == '__main__':
   train_driver(edit_ratio=0.4)
