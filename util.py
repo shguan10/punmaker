@@ -7,6 +7,7 @@ from tqdm import tqdm
 import edlib
 import pickle as pk
 import random
+import torch
 
 import numpy as np
 def editdistance(s,t):
@@ -144,6 +145,10 @@ def prepdataset(edit_ratio=0.5):
   qs = np.transpose(qs,axes=[1,0,2])
   cs = np.transpose(cs,axes=[1,2,0,3])
 
+  qs = torch.tensor(qs).float()
+  cs = torch.tensor(cs).float()
+  ys = torch.tensor(ys)
+
   # now qs and cs are in the right shape
   trainset = (qs[:,:numtrain,:],cs[:,:,:numtrain,:],ys[:numtrain])
   valset = (qs[:,numtrain:numtrain+numval,:],cs[:,:,numtrain:numtrain+numval,:],ys[numtrain:numtrain+numval])
@@ -154,5 +159,5 @@ def prepdataset(edit_ratio=0.5):
 
 if __name__ == '__main__':
   # gendataset(edit_ratio=0.4)
-  # prepdataset(edit_ratio=0.4)
-  print("hello")
+  prepdataset(edit_ratio=0.4)
+  # print("hello")

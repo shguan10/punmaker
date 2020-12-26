@@ -2,19 +2,27 @@ import torch
 from torch import nn
 
 import pdb
-
+import pickle as pk
+import numpy as np
 def onehot(charnum,totalchars):
   return [i==charnum for i in range(totalchars)]
 
 class Deep_Classifier(torch.nn.Module):
-  def __init__(self,indim,hdim,numlayers=1):
+  def __init__(self,hdim=50,numlayers=1,edit_ratio=0.4):
+    torch.nn.Module.__init__(self)
+
+    self.char2num = None
+    self.num2char = None
+
+    self.initchardict(edit_ratio=edit_ratio)
+
+    indim = len(self.char2num)
+
     self.f = nn.GRU(indim,hdim,numlayers)
     self.g = nn.GRU(indim,hdim,numlayers)
     self.numlayers = numlayers
     self.hdim = hdim
 
-    self.char2num = None
-    self.num2char = None
 
   def forward(self,query,cands):
     # query has shape (wordlen,bsize,indim)
@@ -24,16 +32,20 @@ class Deep_Classifier(torch.nn.Module):
 
     _,qenc = self.f(query)
 
-    qenc = qenc.view(self.numlayers,1,bsize,hdim)
+    qenc = qenc.view(self.numlayers,1,bsize,self.hdim)
     qenc = qenc[-1,0,:,:]
 
     # qenc has shape (bsize,hdim)
 
-    candsenc = torch.tensor([self.g(cand) for cand in cands]) # TODO this might be implemented more easily
-    candsenc2 = self.g(cands)
+    numcands,wordlen,bsize,maxchars = cands.shape
+    cands = cands.transpose(0,1)
+    cands = cands.reshape(wordlen,numcands*bsize,maxchars)
 
-    pdb.set_trace()
+    _,candsenc = self.g(cands)
 
+    # candsenc has shape (numlayers,1*numcands*bsize,hdim)
+    candsenc = candsenc.view(self.numlayers,1,numcands,bsize,self.hdim)
+    candsenc = candsenc.transpose(0,2)
     # candsenc has shape (numcands,numlayers,1,bsize,hdim)
 
     candsenc = candsenc[:,-1,0,:,:]
@@ -48,7 +60,7 @@ class Deep_Classifier(torch.nn.Module):
 
     # now prod should have shape (numcands,bsize)
 
-    return prod.transpose()
+    return prod.transpose(0,1)
 
   def initchardict(self,edit_ratio=0.4):
     dname = "data/dataset_"+str(edit_ratio)
@@ -58,9 +70,6 @@ class Deep_Classifier(torch.nn.Module):
     self.char2num = char2num
 
   def encode(self,wipa,edit_ratio=0.4):
-    if self.num2char is None:
-      self.initchardict(edit_ratio=edit_ratio)
-
     totalchars = len(self.char2num)
 
     wipatranslated = [self.char2num(char) for char in wipa]
@@ -95,7 +104,7 @@ def train_network(model,optimizer,dataset,maxpatience = 20,bsize=32,verbose=Fals
   # labels has shape (dataset_size,)
   train,val,test = dataset
 
-  numtrain = len(train)
+  numtrain = len(train[2])
   numbatches = int(numtrain/bsize)
 
   patience = maxpatience
@@ -119,7 +128,7 @@ def train_network(model,optimizer,dataset,maxpatience = 20,bsize=32,verbose=Fals
       loss.backward()
       optimizer.step()
 
-      trainacc += check_num_correct(py.detach().cpu().numpy(),by.cpu().numpy())
+      trainacc += check_num_correct(py.detach().cpu().numpy(),blabels.cpu().numpy())
 
     trainacc /= numtrain
     avgsampleloss = epochloss/numtrain
@@ -133,13 +142,13 @@ def train_network(model,optimizer,dataset,maxpatience = 20,bsize=32,verbose=Fals
       valps = model.forward(vqueries,vcands)
       valloss = criterion(valps,vlabels)/numval
       # pdb.set_trace()
-      valacc = check_num_correct(valps.cpu(),vlabels.cpu())/numval
+      valacc = check_num_correct(valps.cpu(),vlabels.cpu()).item()/numval
     if datastore is not None: 
       with torch.no_grad():
         numtest = len(test[2])
         testps = model.forward(test[0],test[1])
         testloss = criterion(testps,test[2])/numtest
-        testacc = check_num_correct(testps.cpu(),test[2].cpu())/numtest
+        testacc = check_num_correct(testps.cpu(),test[2].cpu()).item()/numtest
 
       datastore.append(((avgsampleloss,valloss,testloss),(trainacc,valacc,testacc)))
 
@@ -159,6 +168,29 @@ def train_network(model,optimizer,dataset,maxpatience = 20,bsize=32,verbose=Fals
   print("\ntestloss: %.4f" %testloss,
         "testacc: %.4f" %testacc)
   # if verbose: print("\n")
+
+def main(edit_ratio=0.4):
+  dname = "data/dataset_"+str(edit_ratio)
+  with open(dname+"_formatted.pk","rb") as f:
+    dataset = pk.load(f)
+
+  model = Deep_Classifier(hdim=10,edit_ratio=edit_ratio)
+
+  optimizer = torch.optim.SGD(model.parameters(),lr=0.001,momentum=0.9)
+
+  datastore = []
+
+  train_network(model,
+                optimizer,
+                dataset,
+                maxpatience = 20,
+                bsize=32,
+                verbose=True,
+                early_stop=0.001,
+                datastore=datastore)
+
+
+  torch.save(model.state_dict(),"models/model_"+str(edit_ratio)+".pt")
 
 if __name__ == '__main__':
   main()
