@@ -87,11 +87,11 @@ class Deep_Classifier(torch.nn.Module):
 
     with torch.no_grad():
       wipaf = self.f(wipatranslated)[1].cpu().numpy()
-      wipaf = wipaf.view((self.numlayers,1,-1,self.hdim))
+      wipaf = wipaf.reshape((self.numlayers,1,-1,self.hdim))
       wipaf = wipaf[-1,0,:,:].flatten()
       
       wipag = self.g(wipatranslated)[1].cpu().numpy()
-      wipag = wipag.view((self.numlayers,1,-1,self.hdim))
+      wipag = wipag.reshape((self.numlayers,1,-1,self.hdim))
       wipag = wipag[-1,0,:,:].flatten()
       
     wresult = np.concatenate((wipaf,wipag))

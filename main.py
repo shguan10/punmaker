@@ -8,11 +8,12 @@ import pickle as pk
 import util
 import torch
 from scipy.stats import expon
-
+import numpy as np
+import pdb
 def prepare_encodings(edit_ratio=0.4):
   dname = "data/dataset_"+str(edit_ratio)
-  mname = "models/model_"+str(edit_ratio)+"_valacc_0.728.pt"# TODO the valacc should be automatically the max in the dir
-  cname = "codes/codes_"+str(edit_ratio)+"_valacc_0.728.pt"# TODO this should automatically correspond to the model chosen
+  mname = "models/model_"+str(edit_ratio)+"_valacc_0.743.pt"# TODO the valacc should be automatically the max in the dir
+  cname = "codes/codes_"+str(edit_ratio)+"_valacc_0.743.pt"# TODO this should automatically correspond to the model chosen
 
   with open(dname+"_chardict.pk","rb") as f:
     (num2char,char2num) = pk.load(f)
@@ -24,7 +25,8 @@ def prepare_encodings(edit_ratio=0.4):
   maxlen = max([len(wipa) for wipa in ipalist])
   zeropadded = [util.zeropad(wipa,maxlen) for wipa in ipalist]
 
-  model = torch.load(mname)
+  model = gru.Deep_Classifier(hdim=10,numlayers=1,edit_ratio=edit_ratio)# TODO get hdim and numlayers from somewhere
+  model.load_state_dict(torch.load(mname))
   model.eval()
 
   encoded = model.bulkencode(zeropadded)
@@ -36,15 +38,16 @@ def close_word(weng,edit_ratio=0.4):
   wipa = ipa.convert2ipa(weng) # TODO should do something when weng is not in dict
 
   dname = "data/dataset_"+str(edit_ratio)
-  mname = "models/model_"+str(edit_ratio)+"_valacc_0.728.pt"# TODO the valacc should be automatically the max in the dir
-  cname = "codes/codes_"+str(edit_ratio)+"_valacc_0.728.pt"# TODO this should automatically correspond to the model chosen
+  mname = "models/model_"+str(edit_ratio)+"_valacc_0.743.pt"# TODO the valacc should be automatically the max in the dir
+  cname = "codes/codes_"+str(edit_ratio)+"_valacc_0.743.pt"# TODO this should automatically correspond to the model chosen
 
   with open(dname+"_chardict.pk","rb") as f:
     (num2char,char2num) = pk.load(f)
 
   wipanums = [char2num[char] for char in wipa]
 
-  model = torch.load(mname)
+  model = gru.Deep_Classifier(hdim=10,numlayers=1,edit_ratio=edit_ratio)# TODO get hdim and numlayers from somewhere
+  model.load_state_dict(torch.load(mname))
   model.eval()
 
   wenc = model.encode(wipanums)
@@ -54,7 +57,7 @@ def close_word(weng,edit_ratio=0.4):
 
   # look through the entire ipacodes for the greatest cosine similarity to wenc
   widx = np.argmax(ipacodes@wenc.transpose())
-  return ipa.convert2eng(ipa.wipind(widx))
+  return ipa.convert2eng(ipa.wipaind(widx))
 
 def random_parts(strlen):
   if strlen<=0: return None
@@ -62,15 +65,18 @@ def random_parts(strlen):
   dist = 0
   result = []
   while dist<strlen:
-    dist += expon.rvs(scale=1,size=1)
+    var = expon.rvs(scale=3,size=1)
+    var = int(var)
+    if var == 0: continue
+    dist += var
     if dist > strlen: dist = strlen
     result.append(dist)
   return result
 
 def close_phrase(weng_phrase,edit_ratio=0.4):
   dname = "data/dataset_"+str(edit_ratio)
-  mname = "models/model_"+str(edit_ratio)+"_valacc_0.728.pt"# TODO the valacc should be automatically the max in the dir
-  cname = "codes/codes_"+str(edit_ratio)+"_valacc_0.728.pt"# TODO this should automatically correspond to the model chosen
+  mname = "models/model_"+str(edit_ratio)+"_valacc_0.743.pt"# TODO the valacc should be automatically the max in the dir
+  cname = "codes/codes_"+str(edit_ratio)+"_valacc_0.743.pt"# TODO this should automatically correspond to the model chosen
 
   with open(dname+"_chardict.pk","rb") as f:
     (num2char,char2num) = pk.load(f)
@@ -83,10 +89,13 @@ def close_phrase(weng_phrase,edit_ratio=0.4):
   part_ends = random_parts(len(wipas))
   part_begins = [0]+part_ends[:-1]
 
+  # print(part_ends)
+
   qphrase = [wipas[b:e] for b,e in zip(part_begins,part_ends)]
   qphrase = [[char2num[char] for char in wipa] for wipa in qphrase]
 
-  model = torch.load(mname)
+  model = gru.Deep_Classifier(hdim=10,numlayers=1,edit_ratio=edit_ratio)# TODO get hdim and numlayers from somewhere
+  model.load_state_dict(torch.load(mname))
   model.eval()
 
   qencs = []
@@ -98,15 +107,17 @@ def close_phrase(weng_phrase,edit_ratio=0.4):
   with open(cname,"rb") as f:
     ipacodes = pk.load(f)
 
-  csim = ipacodes@wenc.transpose()
+  csim = ipacodes@qencs.transpose()
+  # pdb.set_trace()
   desired = csim.argmax(axis=0) # TODO which axis?
 
   wengs = []
   for windx in desired:
-    wengs.append(ipa.convert2eng(ipa.wipind(widx)))
+    wengs.append(ipa.convert2eng(ipa.wipaind(windx)))
 
   return wengs
 
 if __name__ == '__main__':
-  prepare_encodings(edit_ratio=0.4)
-  print(close_phrase("happy birthday to you"))
+  # prepare_encodings(edit_ratio=0.4)
+  # print(close_phrase("happy birthday to you"))
+  print(close_word("learning"))
