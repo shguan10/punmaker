@@ -4,6 +4,9 @@ from torch import nn
 import pdb
 import pickle as pk
 import numpy as np
+
+import time
+
 def onehot(charnum,totalchars):
   return [i==charnum for i in range(totalchars)]
 
@@ -22,7 +25,6 @@ class Deep_Classifier(torch.nn.Module):
     self.g = nn.GRU(indim,hdim,numlayers)
     self.numlayers = numlayers
     self.hdim = hdim
-
 
   def forward(self,query,cands):
     # query has shape (wordlen,bsize,indim)
@@ -97,7 +99,7 @@ def check_num_correct(py,by):
   (bsize,numcands) = py.shape
   return sum(py.argmax(1)==by)
 
-def train_network(model,optimizer,dataset,maxpatience = 20,bsize=32,verbose=False,early_stop=0.001,numepochs=200,datastore=None):
+def train_network(model,optimizer,dataset,maxpatience = 20,bsize=32,verbose=False,numepochs=200,datastore=None):
   # each of the train,val,test sets must be tuples of queries,cands,labels
   # queries has shape (wordlen,dataset_size,indim)
   # cands has shape (numcands,wordlen,dataset_size,indim)
@@ -110,6 +112,8 @@ def train_network(model,optimizer,dataset,maxpatience = 20,bsize=32,verbose=Fals
   patience = maxpatience
   prevmin = None
   criterion = torch.nn.CrossEntropyLoss()
+
+  starttime = time.time()
   for epoch in range(numepochs):
     epochloss = 0
     trainacc = 0
@@ -120,6 +124,10 @@ def train_network(model,optimizer,dataset,maxpatience = 20,bsize=32,verbose=Fals
       bqueries = train[0][:,batch,:]
       bcands = train[1][:,:,batch,:]
       blabels = train[2][batch]
+
+      bqueries = bqueries.cuda()
+      bcands = bcands.cuda()
+      blabels = blabels.cuda()
 
       py = model.forward(bqueries,bcands)
       loss = criterion.forward(py,blabels)
@@ -134,9 +142,9 @@ def train_network(model,optimizer,dataset,maxpatience = 20,bsize=32,verbose=Fals
     avgsampleloss = epochloss/numtrain
 
     with torch.no_grad():
-      vqueries = val[0]
-      vcands = val[1]
-      vlabels = val[2]
+      vqueries = val[0].cuda()
+      vcands = val[1].cuda()
+      vlabels = val[2].cuda()
       numval = len(vlabels)
 
       valps = model.forward(vqueries,vcands)
@@ -146,18 +154,25 @@ def train_network(model,optimizer,dataset,maxpatience = 20,bsize=32,verbose=Fals
     if datastore is not None: 
       with torch.no_grad():
         numtest = len(test[2])
-        testps = model.forward(test[0],test[1])
-        testloss = criterion(testps,test[2])/numtest
+
+        tqueries = test[0].cuda()
+        tcands = test[1].cuda()
+        tlabels = test[2].cuda()
+
+        testps = model.forward(tqueries,tcands)
+        testloss = criterion(testps,tlabels)/numtest
         testacc = check_num_correct(testps.cpu(),test[2].cpu()).item()/numtest
 
       datastore.append(((avgsampleloss,valloss,testloss),(trainacc,valacc,testacc)))
 
     if verbose:
+      elapsed_time = time.time() - starttime
       print("epoch: ",epoch,"/",numepochs-1,
         ", trainloss: %.4f" %avgsampleloss, 
         ", trainacc: %.4f" %trainacc, 
         "valloss: %.4f" %valloss,
         "valacc: %.4f" %valacc,
+        "elapsed_time: %d"%int(elapsed_time),
         end="\r")
     
     if prevmin is None or valloss < prevmin: 
@@ -174,7 +189,7 @@ def main(edit_ratio=0.4):
   with open(dname+"_formatted.pk","rb") as f:
     dataset = pk.load(f)
 
-  model = Deep_Classifier(hdim=10,edit_ratio=edit_ratio)
+  model = Deep_Classifier(hdim=10,edit_ratio=edit_ratio).cuda()
 
   optimizer = torch.optim.SGD(model.parameters(),lr=0.001,momentum=0.9)
 
@@ -183,10 +198,9 @@ def main(edit_ratio=0.4):
   train_network(model,
                 optimizer,
                 dataset,
-                maxpatience = 20,
+                maxpatience = 100,
                 bsize=32,
                 verbose=True,
-                early_stop=0.001,
                 datastore=datastore)
 
 
