@@ -73,6 +73,7 @@ def zeropad(word,maxlen):
   wlen = len(word)
   result = [0 for _ in range(maxlen)]
   result[:wlen] = word
+  # print(len(result))
   return result
 
 def onehot(charnum,totalchars):
@@ -103,9 +104,9 @@ def prepdataset(edit_ratio=0.5):
   ys = np.array([np.array([c==d[2] for c in d[1]]).argmax() for d in dataset])
 
   lenqs = [len(q) for q in qs]
-  lencs = [[len(cand) for cand in cl]for cl in cs]
+  lencs = [len(cand) for cl in cs for cand in cl]
 
-  maxlen = max(max(lenqs),max(max(lencs)))
+  maxlen = max(max(lenqs),max(lencs))
   # pdb.set_trace()
 
   # translate each char into one-hot
@@ -159,5 +160,5 @@ def prepdataset(edit_ratio=0.5):
 
 if __name__ == '__main__':
   # gendataset(edit_ratio=0.4)
-  prepdataset(edit_ratio=0.4)
+  prepdataset(edit_ratio=0.5)
   # print("hello")
