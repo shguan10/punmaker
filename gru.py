@@ -2,12 +2,19 @@ import torch
 from torch import nn
 
 import pdb
+
+def onehot(charnum,totalchars):
+  return [i==charnum for i in range(totalchars)]
+
 class Deep_Classifier(torch.nn.Module):
   def __init__(self,indim,hdim,numlayers=1):
     self.f = nn.GRU(indim,hdim,numlayers)
     self.g = nn.GRU(indim,hdim,numlayers)
     self.numlayers = numlayers
     self.hdim = hdim
+
+    self.char2num = None
+    self.num2char = None
 
   def forward(self,query,cands):
     # query has shape (wordlen,bsize,indim)
@@ -42,6 +49,38 @@ class Deep_Classifier(torch.nn.Module):
     # now prod should have shape (numcands,bsize)
 
     return prod.transpose()
+
+  def initchardict(self,edit_ratio=0.4):
+    dname = "data/dataset_"+str(edit_ratio)
+    with open(dname+"_chardict.pk","rb") as f:
+      num2char,char2num = pk.load(f)
+    self.num2char = num2char
+    self.char2num = char2num
+
+  def encode(self,wipa,edit_ratio=0.4):
+    if self.num2char is None:
+      self.initchardict(edit_ratio=edit_ratio)
+
+    totalchars = len(self.char2num)
+
+    wipatranslated = [self.char2num(char) for char in wipa]
+    wipatranslated = [onehot(charnum,totalchars) for charnum in wipatranslated]
+
+    wipatranslated = torch.tensor(wipatranslated)
+
+    # wipatranslated has shape (wordlen,totalchars)
+
+    wipatranslated = wipatranslated.reshpae(-1,1,totalchars)
+
+    wresult = None
+
+    with torch.no_grad():
+      wipaf = self.f(wipatranslated).cpu().numpy().flatten()
+      wipag = self.g(wipatranslated).cpu().numpy().flatten()
+
+    wresult = np.concatenate(wipaf,wipag)
+    return wresult
+
 
 def check_num_correct(py,by):
   # by is shape (bsize,)
@@ -120,3 +159,6 @@ def train_network(model,optimizer,dataset,maxpatience = 20,bsize=32,verbose=Fals
   print("\ntestloss: %.4f" %testloss,
         "testacc: %.4f" %testacc)
   # if verbose: print("\n")
+
+if __name__ == '__main__':
+  main()
