@@ -71,7 +71,7 @@ class Deep_Classifier(torch.nn.Module):
     self.num2char = num2char
     self.char2num = char2num
 
-  def encode(self,wipa,edit_ratio=0.4):
+  def encode(self,wipa):
     totalchars = len(self.char2num)
 
     wipatranslated = [self.char2num(char) for char in wipa]
@@ -86,12 +86,47 @@ class Deep_Classifier(torch.nn.Module):
     wresult = None
 
     with torch.no_grad():
-      wipaf = self.f(wipatranslated).cpu().numpy().flatten()
-      wipag = self.g(wipatranslated).cpu().numpy().flatten()
-
-    wresult = np.concatenate(wipaf,wipag)
+      _,wipaf = self.f(wipatranslated).cpu().numpy()
+      wipaf = wipaf.view(self.numlayers,1,-1,self.hdim)
+      wipaf = wipaf[-1,0,:,:].flatten()
+      
+      _,wipag = self.g(wipatranslated).cpu().numpy()
+      wipag = wipag.view(self.numlayers,1,-1,self.hdim)
+      wipag = wipag[-1,0,:,:].flatten()
+      
+    wresult = np.concatenate((wipaf,wipag))
     return wresult
 
+  def bulkencode(self,wipas):
+    # assumes wipas has shape (dataset_size,wordlen)
+    # ie wipas is zeropadded but not one-hot encoded
+    totalchars = len(self.char2num)
+
+    wipastranslated = [[self.char2num(char) for char in wipa] for wipa in wipas]
+    wipastranslated = [[onehot(charnum,totalchars) for charnum in wipa] for wipa in wipastranslated]
+
+    wipastranslated = torch.tensor(wipastranslated)
+
+    # wipastranslated has shape (dataset_size,wordlen,totalchars)
+    wipastranslated = wipastranslated.transpose(0,1)
+
+    wresult = None
+
+    with torch.no_grad():
+      _,wipaf = self.f(wipastranslated).cpu().numpy()
+      wipaf = wipaf.view(self.numlayers,1,-1,self.hdim)
+      wipaf = wipaf[-1,0,:,:]
+
+      _,wipag = self.g(wipastranslated).cpu().numpy()
+      wipag = wipag.view(self.numlayers,1,-1,self.hdim)
+      wipag = wipag[-1,0,:,:]
+
+    print(wipaf.shape,wipag.shape)
+    pdb.set_trace()
+
+    wresult = np.concatenate((wipaf,wipag),axis=1)
+    print(wresult.shape)
+    return wresult
 
 def check_num_correct(py,by):
   # by is shape (bsize,)
@@ -99,7 +134,7 @@ def check_num_correct(py,by):
   (bsize,numcands) = py.shape
   return sum(py.argmax(1)==by)
 
-def train_network(model,optimizer,dataset,maxpatience = 20,bsize=32,verbose=False,numepochs=200,datastore=None):
+def train_loop(model,optimizer,dataset,maxpatience = 20,bsize=32,verbose=False,numepochs=200,datastore=None):
   # each of the train,val,test sets must be tuples of queries,cands,labels
   # queries has shape (wordlen,dataset_size,indim)
   # cands has shape (numcands,wordlen,dataset_size,indim)
@@ -184,27 +219,30 @@ def train_network(model,optimizer,dataset,maxpatience = 20,bsize=32,verbose=Fals
         "testacc: %.4f" %testacc)
   # if verbose: print("\n")
 
-def main(edit_ratio=0.4):
+  return valacc
+
+def train_driver(edit_ratio=0.4): # CHOO CHOO
   dname = "data/dataset_"+str(edit_ratio)
   with open(dname+"_formatted.pk","rb") as f:
     dataset = pk.load(f)
 
   model = Deep_Classifier(hdim=10,edit_ratio=edit_ratio).cuda()
 
-  optimizer = torch.optim.SGD(model.parameters(),lr=0.001,momentum=0.9)
+  optimizer = torch.optim.SGD(model.parameters(),lr=0.01,momentum=0.9)
 
   datastore = []
 
-  train_network(model,
-                optimizer,
-                dataset,
-                maxpatience = 100,
-                bsize=32,
-                verbose=True,
-                datastore=datastore)
+  valacc = train_loop(model,
+                        optimizer,
+                        dataset,
+                        maxpatience = 200,
+                        bsize=32,
+                        verbose=True,
+                        numepochs=200,
+                        datastore=datastore)
 
 
-  torch.save(model.state_dict(),"models/model_"+str(edit_ratio)+".pt")
+  torch.save(model.state_dict(),"models/model_"+str(edit_ratio)+"_valacc_"+str(valacc)+".pt")
 
 if __name__ == '__main__':
-  main()
+  train_driver(edit_ratio=0.4)
