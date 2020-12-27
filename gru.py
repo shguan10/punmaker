@@ -124,7 +124,13 @@ class Deep_Classifier(torch.nn.Module):
 
     wresult = np.concatenate((wipaf,wipag),axis=1)
     print(wresult.shape)
-    return wresult
+
+    # make sure to normalize each encoding by its l2 norm
+    l2norms = (((wresult**2).sum(axis=1))**0.5).reshape(-1,1)
+
+    pdb.set_trace()
+
+    return wresult / l2norms
 
 def check_num_correct(py,by):
   # by is shape (bsize,)
