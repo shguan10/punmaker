@@ -12,6 +12,15 @@ import eng_to_ipa_to_eng as ipa
 with open("codes/ngram3.pk","rb") as f:
   allcodes,vocab,idfs = pk.load(f)
 
+def gencodes():
+  ipalist = ipa.ipa
+
+  vectorizer = TfidfVectorizer(analyzer=ngrams)
+  allcodes = vectorizer.fit_transform(ipalist)
+  vocab = vectorizer.vocabulary_
+  idfs = vectorizer.idf_
+  # print(vectorizer.get_feature_names())
+
 def ngrams(s, length=3):
     s = s.lower()
     
