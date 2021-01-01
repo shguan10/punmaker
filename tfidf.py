@@ -1,3 +1,7 @@
+"""
+IMPORTANT
+you must call getcodes() once in order to use this module like a library
+"""
 from sklearn.feature_extraction.text import TfidfVectorizer
 import re
 import numpy as np
@@ -9,8 +13,15 @@ sys.path.append("..")
 
 import eng_to_ipa_to_eng as ipa
 
-with open("codes/ngram3.pk","rb") as f:
-  allcodes,vocab,idfs = pk.load(f)
+codes = {"allcodes":None,"vocab":None,"idfs":None}
+
+def getcodes():
+  with open("codes/ngram3.pk","rb") as f:
+    allcodes,vocab,idfs = pk.load(f)  
+  codes['allcodes'] = allcodes
+  codes['vocab'] = vocab
+  codes['idfs'] = idfs
+  return codes
 
 def gencodes():
   ipalist = ipa.ipa
@@ -20,6 +31,8 @@ def gencodes():
   vocab = vectorizer.vocabulary_
   idfs = vectorizer.idf_
   # print(vectorizer.get_feature_names())
+  with open("codes/ngram3.pk","wb") as f:
+    pk.dump((allcodes,vocab,idfs),f)
 
 def ngrams(s, length=3):
     s = s.lower()
@@ -61,17 +74,17 @@ def wengs2cands(wengs,numcands=5):
 
 def wipa2vec(wipa):
   wipa_gs = ngrams(wipa)
-  counts = [0 for _ in vocab]
+  counts = [0 for _ in codes['vocab']]
   
-  for gram in vocab:
+  for gram in codes['vocab']:
       c = count(gram,wipa_gs)
-      ind = vocab[gram]
+      ind = codes['vocab'][gram]
       counts[ind] = c
 
   counts = np.array(counts)
   
   tfs = counts / len(wipa_gs)
-  tfidfs = tfs * idfs
+  tfidfs = tfs * codes['idfs']
   
   norm = ((tfidfs**2).sum())**0.5
   
@@ -81,7 +94,7 @@ def wipa2vec(wipa):
 
 def wipa2cands(wipa,numcands=5):
   wordvec = wipa2vec(wipa)
-  sims = allcodes @ wordvec
+  sims = codes['allcodes'] @ wordvec
   
   sims = sims.flatten()
   
@@ -92,7 +105,7 @@ def wipa2cands(wipa,numcands=5):
 import pdb
 def wipas2cands(wipas,numcands=5):
   wordvecs = np.array([wipa2vec(wipa).flatten() for wipa in wipas])
-  sims = allcodes @ (wordvecs.transpose())
+  sims = codes['allcodes'] @ (wordvecs.transpose())
   # pdb.set_trace()
   
   words = []
@@ -109,4 +122,5 @@ def wipas2cands(wipas,numcands=5):
   return words
 
 if __name__ == '__main__':
-  print(wengs2cands(["carrot","happy","birthday"]))
+  # print(wengs2cands(["carrot","happy","birthday"]))
+  gencodes()

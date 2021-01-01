@@ -8,6 +8,8 @@ import pickle as pk
 import util
 import torch
 from scipy.stats import expon
+import scipy as sp
+from scipy import stats
 import numpy as np
 import pdb
 
@@ -68,7 +70,7 @@ def random_parts(strlen):
   dist = 0
   result = []
   while dist<strlen:
-    var = expon.rvs(scale=8,size=1)
+    var = expon.rvs(scale=3,size=1)
     var = int(var)
     if var == 0: continue
     dist += var
@@ -76,8 +78,10 @@ def random_parts(strlen):
     result.append(dist)
   return result
 
-def equal_parts(strlen):
-  numparts = 3
+def equal_parts(strlen,numparts=3):
+  # numparts = int(sp.stats.norm(original_num_tokens-1,2).rvs())
+  # numparts = 3
+
   len_each = int(strlen / numparts)
   if strlen <= 10: return [strlen]
 
@@ -129,21 +133,24 @@ def close_phrase(weng_phrase,edit_ratio=0.4):
 
   return wengs
 
-def close_phrase_tfidf(weng_phrase,ngram_length = 3):
+def close_phrase_tfidf(weng_phrase,ngram_length = 3,numparts=3):
   # currently only supports ngram_length 3
   wengs = weng_phrase.split(" ")
 
   wipas = [ipa.convert2ipa(weng)for weng in wengs] # TODO should do something when weng is not in dict
+  # pdb.set_trace()
   wipas = ''.join([char for wipa in wipas for char in wipa])
 
-  part_ends = equal_parts(len(wipas))
+  # part_ends = equal_parts(len(wipas),numparts=numparts)
+  part_ends = random_parts(len(wipas))
   part_begins = [0]+part_ends[:-1]
 
   # print(part_ends)
 
+  # pdb.set_trace()
+
   wipas = [wipas[b:e] for b,e in zip(part_begins,part_ends)]
 
-  # pdb.set_trace()
 
   return tfidf.wipas2cands(wipas,numcands=1)
 
@@ -151,4 +158,5 @@ if __name__ == '__main__':
   # prepare_encodings(edit_ratio=0.4)
   # print(close_phrase("happy birthday to you"))
   # print(close_word("birthday"))
-  print(close_phrase_tfidf("how are you doing this fine day"))
+  tfidf.getcodes()
+  print(close_phrase_tfidf(input(),numparts=9))
