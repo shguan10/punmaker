@@ -10,6 +10,9 @@ import torch
 from scipy.stats import expon
 import numpy as np
 import pdb
+
+import tfidf
+
 def prepare_encodings(edit_ratio=0.4):
   dname = "data/dataset_"+str(edit_ratio)
   mname = "models/model_"+str(edit_ratio)+"_valacc_0.743.pt"# TODO the valacc should be automatically the max in the dir
@@ -65,13 +68,22 @@ def random_parts(strlen):
   dist = 0
   result = []
   while dist<strlen:
-    var = expon.rvs(scale=3,size=1)
+    var = expon.rvs(scale=8,size=1)
     var = int(var)
     if var == 0: continue
     dist += var
     if dist > strlen: dist = strlen
     result.append(dist)
   return result
+
+def equal_parts(strlen):
+  numparts = 3
+  len_each = int(strlen / numparts)
+  if strlen <= 10: return [strlen]
+
+  # pdb.set_trace()
+
+  return [int(len_each*(i+1)) for i in range(numparts)] + ([strlen] if (strlen % numparts) else [])
 
 def close_phrase(weng_phrase,edit_ratio=0.4):
   dname = "data/dataset_"+str(edit_ratio)
@@ -109,7 +121,7 @@ def close_phrase(weng_phrase,edit_ratio=0.4):
 
   csim = ipacodes@qencs.transpose()
   # pdb.set_trace()
-  desired = csim.argmax(axis=0) # TODO which axis?
+  desired = csim.argmax(axis=0)
 
   wengs = []
   for windx in desired:
@@ -117,7 +129,26 @@ def close_phrase(weng_phrase,edit_ratio=0.4):
 
   return wengs
 
+def close_phrase_tfidf(weng_phrase,ngram_length = 3):
+  # currently only supports ngram_length 3
+  wengs = weng_phrase.split(" ")
+
+  wipas = [ipa.convert2ipa(weng)for weng in wengs] # TODO should do something when weng is not in dict
+  wipas = ''.join([char for wipa in wipas for char in wipa])
+
+  part_ends = equal_parts(len(wipas))
+  part_begins = [0]+part_ends[:-1]
+
+  # print(part_ends)
+
+  wipas = [wipas[b:e] for b,e in zip(part_begins,part_ends)]
+
+  # pdb.set_trace()
+
+  return tfidf.wipas2cands(wipas,numcands=1)
+
 if __name__ == '__main__':
   # prepare_encodings(edit_ratio=0.4)
   # print(close_phrase("happy birthday to you"))
-  print(close_word("learning"))
+  # print(close_word("birthday"))
+  print(close_phrase_tfidf("how are you doing this fine day"))

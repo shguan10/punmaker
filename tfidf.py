@@ -43,25 +43,7 @@ def norm(vec):
     return ((vec**2).sum())**0.5
 def weng2vec(weng):
     wipa = ipa.convert2ipa(weng)
-    wipa_gs = ngrams(wipa)
-    
-    counts = [0 for _ in vocab]
-    
-    for gram in vocab:
-        c = count(gram,wipa_gs)
-        ind = vocab[gram]
-        counts[ind] = c
-
-    counts = np.array(counts)
-    
-    tfs = counts / len(wipa_gs)
-    tfidfs = tfs * idfs
-    
-    norm = ((tfidfs**2).sum())**0.5
-    
-    wordvec = tfidfs / norm
-    
-    return wordvec.reshape(-1,1)
+    return wipa2vec(wipa)
 
 def word_lookup_vec(weng):
     wipa = ipa.convert2ipa(weng)
@@ -69,17 +51,62 @@ def word_lookup_vec(weng):
     assert ipa.wipaind(ind)==wipa
     return allcodes[ind]
 
-def word2cands(weng,numcands=5):
-    wordvec = weng2vec(weng)
-    
-    sims = allcodes @ wordvec
-    
-    sims = sims.flatten()
-    
-    inds = np.argpartition(sims, -numcands)[-numcands:]
-    
+def weng2cands(weng,numcands=5):
+  wipa = ipa.convert2ipa(weng)
+  return wipa2cands(wipa,numcands=numcands)
+
+def wengs2cands(wengs,numcands=5):
+  wipas = [ipa.convert2ipa(weng) for weng in wengs]
+  return wipas2cands(wipas,numcands=numcands)
+
+def wipa2vec(wipa):
+  wipa_gs = ngrams(wipa)
+  counts = [0 for _ in vocab]
+  
+  for gram in vocab:
+      c = count(gram,wipa_gs)
+      ind = vocab[gram]
+      counts[ind] = c
+
+  counts = np.array(counts)
+  
+  tfs = counts / len(wipa_gs)
+  tfidfs = tfs * idfs
+  
+  norm = ((tfidfs**2).sum())**0.5
+  
+  wordvec = tfidfs / norm
+  
+  return wordvec.reshape(-1,1)
+
+def wipa2cands(wipa,numcands=5):
+  wordvec = wipa2vec(wipa)
+  sims = allcodes @ wordvec
+  
+  sims = sims.flatten()
+  
+  inds = np.argpartition(sims, -numcands)[-numcands:]
+  
+  wengs = [ipa.convert2eng(ipa.ipa[ind]) for ind in inds]
+  return wengs
+import pdb
+def wipas2cands(wipas,numcands=5):
+  wordvecs = np.array([wipa2vec(wipa).flatten() for wipa in wipas])
+  sims = allcodes @ (wordvecs.transpose())
+  # pdb.set_trace()
+  
+  words = []
+
+  for ind in range(len(wipas)):
+    choices = sims[:,ind]
+    choices = choices.flatten()
+
+    inds = np.argpartition(choices, -numcands)[-numcands:]
+  
     wengs = [ipa.convert2eng(ipa.ipa[ind]) for ind in inds]
-    return wengs
+    
+    words.append(wengs)
+  return words
 
 if __name__ == '__main__':
-  print(word2cands("carrot"))
+  print(wengs2cands(["carrot","happy","birthday"]))
