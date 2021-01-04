@@ -158,7 +158,56 @@ def prepdataset(edit_ratio=0.5):
   with open(dname+"_formatted.pk","wb") as f:
     pk.dump((trainset,valset,testset),f)
 
+def onehot2not(t):
+  # assumes t has the onehot dim as the zeroth dim
+  return torch.argmax(t,dim=0)
+
+def getdatasetlengths(edit_ratio=0.4):
+  dname = "data/dataset_"+str(edit_ratio)
+  with open(dname+"_formatted.pk","rb") as f: data = pk.load(f)
+
+  results = []
+
+  for dset in data:
+    subresult = []
+    for ind,d in enumerate(dset):
+      if ind==0:
+        # ind ==0, queries
+        maxlen,numsamples,numtokens = d.shape
+        d = d.transpose(0,2)
+        d = onehot2not(d)
+        d = d.transpose(0,1)
+        # now d is shape maxlen,numsamples
+        zeros = (d==0).to(torch.float)
+        ones = torch.ones((1,numsamples))
+        catted = torch.cat((zeros,ones),dim=0) # now every sample has at least one 1
+
+        lengths = np.argmax(catted.numpy(),axis=0) # for some reason torch argmax doesn't return the first maximal element, as advertised
+
+        subresult.append(lengths)
+      if ind==1:
+        # ind ==1, cands
+        numcands,maxlen,numsamples,numtokens = d.shape
+        d = d.transpose(0,3)
+        d = onehot2not(d)
+        d = d.transpose(0,2)
+        d = d.transpose(1,2)
+        # now d is shape numcands,maxlen,numsamples
+        zeros = d==0
+        ones = torch.ones((numcands,1,numsamples))
+        catted = torch.cat((zeros,ones),dim=1) # now every sample has at least one 1
+
+        lengths = np.argmax(catted.numpy(),axis=1)
+
+        subresult.append(lengths)
+      if ind==2: continue
+      # ind ==2, labels
+    results.append(subresult)
+
+  with open(dname+"_formatted_lengths.pk","wb") as f: pk.dump(results,f)
+
 if __name__ == '__main__':
   # gendataset(edit_ratio=0.4)
-  prepdataset(edit_ratio=0.5)
+  # prepdataset(edit_ratio=0.5)
+  getdatasetlengths(edit_ratio=0.4)
   # print("hello")
