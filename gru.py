@@ -27,14 +27,12 @@ class Deep_Classifier(torch.nn.Module):
     self.hdim = hdim
 
   def forward(self,query,cands):
-    # query has shape (wordlen,bsize,indim)
-    # cands has shape (numcands,wordlen,bsize,indim)
+    # query has "shape" (wordlen,bsize,indim)
+    # cands has "shape" (numcands,wordlen,bsize,indim)
     # this function returns shape (bsize,numcands)
-    wordlen,bsize,indim = query.shape
-
     _,qenc = self.f(query)
 
-    qenc = qenc.view(self.numlayers,1,bsize,self.hdim)
+    qenc = qenc.view(self.numlayers,1,-1,self.hdim)
     qenc = qenc[-1,0,:,:]
 
     # qenc has shape (bsize,hdim)
@@ -44,7 +42,7 @@ class Deep_Classifier(torch.nn.Module):
     for cand in cands:
       _,cenc = self.f(cand)
 
-      cenc = cenc.view(self.numlayers,1,bsize,self.hdim)
+      cenc = cenc.view(self.numlayers,1,-1,self.hdim)
       cenc = cenc[-1,0,:,:]
       cenc = cenc[None,:,:]
       candsenc.append(cenc)
@@ -174,25 +172,25 @@ def train_loop(model,optimizer,dataset,lengths,maxpatience = 20,bsize=32,verbose
       bquerieslengths = trainlengths[0][batch]
       bcandslengths = trainlengths[1][:,batch]
 
-      pdb.set_trace()
 
       # sort the batch by length, in decreasing order
       bquerieslengths_sortindx = np.argsort(bquerieslengths)
-      bquerieslengths_sortindx = bquerieslengths_sortindx[::-1]
+      bquerieslengths_sortindx = np.array(bquerieslengths_sortindx[::-1])
       bqueries = bqueries[:,bquerieslengths_sortindx,:]
       bquerieslengths = bquerieslengths[bquerieslengths_sortindx]
 
       bcandslengths_sortindx = np.argsort(bcandslengths,axis=-1)
-      bcandslengths_sortindx = bcandslengths_sortindx[:,::-1]
+      bcandslengths_sortindx = np.array(bcandslengths_sortindx[:,::-1])
       for i in range(numcands):
-        bcands[i] = bcands[i][:,bcandslengths_sortindx[i],:]
-      bcandslengths = bcandslengths[bcandslengths_sortindx]
+        bcands[i] = bcands[i,:,bcandslengths_sortindx[i],:]
+        bcandslengths[i] = bcandslengths[i,bcandslengths_sortindx[i,:]]
 
       # now make the queries and cands a packed sequence
       bqueries = torch.nn.utils.rnn.pack_padded_sequence(bqueries,bquerieslengths)
       bcands = [torch.nn.utils.rnn.pack_padded_sequence(bcands[i],bcandslengths[i]) 
                   for i in range(numcands)]
 
+      # pdb.set_trace()
       py = model.forward(bqueries,bcands)
       loss = criterion.forward(py,blabels)
       epochloss+=loss
@@ -255,7 +253,7 @@ def train_driver(edit_ratio=0.4): # CHOO CHOO
   with open(dname+"_formatted.pk","rb") as f:
     dataset = pk.load(f)
 
-  with open(dname+"_formatted_lenths.pk","rb") as f:
+  with open(dname+"_formatted_lengths.pk","rb") as f:
     lengths = pk.load(f)
 
   model = Deep_Classifier(hdim=10,edit_ratio=edit_ratio).cuda()
