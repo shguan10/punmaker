@@ -39,18 +39,17 @@ class Deep_Classifier(torch.nn.Module):
 
     # qenc has shape (bsize,hdim)
 
-    numcands,wordlen,bsize,maxchars = cands.shape
-    cands = cands.transpose(0,1)
-    cands = cands.reshape(wordlen,numcands*bsize,maxchars)
+    candsenc = []
 
-    _,candsenc = self.g(cands)
+    for cand in cands:
+      _,cenc = self.f(cand)
 
-    # candsenc has shape (numlayers,1*numcands*bsize,hdim)
-    candsenc = candsenc.view(self.numlayers,1,numcands,bsize,self.hdim)
-    candsenc = candsenc.transpose(0,2)
-    # candsenc has shape (numcands,numlayers,1,bsize,hdim)
+      cenc = cenc.view(self.numlayers,1,bsize,self.hdim)
+      cenc = cenc[-1,0,:,:]
+      cenc = cenc[None,:,:]
+      candsenc.append(cenc)
 
-    candsenc = candsenc[:,-1,0,:,:]
+    candsenc = torch.cat(candsenc,dim=0)
 
     # candsenc has shape (numcands,bsize,hdim)
 
@@ -175,6 +174,8 @@ def train_loop(model,optimizer,dataset,lengths,maxpatience = 20,bsize=32,verbose
       bquerieslengths = trainlengths[0][batch]
       bcandslengths = trainlengths[1][:,batch]
 
+      pdb.set_trace()
+
       # sort the batch by length, in decreasing order
       bquerieslengths_sortindx = np.argsort(bquerieslengths)
       bquerieslengths_sortindx = bquerieslengths_sortindx[::-1]
@@ -186,8 +187,6 @@ def train_loop(model,optimizer,dataset,lengths,maxpatience = 20,bsize=32,verbose
       for i in range(numcands):
         bcands[i] = bcands[i][:,bcandslengths_sortindx[i],:]
       bcandslengths = bcandslengths[bcandslengths_sortindx]
-
-      pdb.set_trace()
 
       # now make the queries and cands a packed sequence
       bqueries = torch.nn.utils.rnn.pack_padded_sequence(bqueries,bquerieslengths)
