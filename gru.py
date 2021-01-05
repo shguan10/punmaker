@@ -138,12 +138,16 @@ def check_num_correct(py,by):
   (bsize,numcands) = py.shape
   return sum(py.argmax(1)==by)
 
-def train_loop(model,optimizer,dataset,maxpatience = 20,bsize=32,verbose=False,numepochs=200,datastore=None):
+def train_loop(model,optimizer,dataset,lengths,maxpatience = 20,bsize=32,verbose=False,numepochs=200,datastore=None):
   # each of the train,val,test sets must be tuples of queries,cands,labels
   # queries has shape (wordlen,dataset_size,indim)
   # cands has shape (numcands,wordlen,dataset_size,indim)
   # labels has shape (dataset_size,)
+  # lengths is basically the same shape as dataset but there's no labels lengths
   train,val,test = dataset
+  trainlengths,vallengths,testlengths = lengths
+
+  numcands = train[1].shape[0]
 
   numtrain = len(train[2])
   numbatches = int(numtrain/bsize)
@@ -167,6 +171,28 @@ def train_loop(model,optimizer,dataset,maxpatience = 20,bsize=32,verbose=False,n
       bqueries = bqueries.cuda()
       bcands = bcands.cuda()
       blabels = blabels.cuda()
+
+      bquerieslengths = trainlengths[0][batch]
+      bcandslengths = trainlengths[1][:,batch]
+
+      # sort the batch by length, in decreasing order
+      bquerieslengths_sortindx = np.argsort(bquerieslengths)
+      bquerieslengths_sortindx = bquerieslengths_sortindx[::-1]
+      bqueries = bqueries[:,bquerieslengths_sortindx,:]
+      bquerieslengths = bquerieslengths[bquerieslengths_sortindx]
+
+      bcandslengths_sortindx = np.argsort(bcandslengths,axis=-1)
+      bcandslengths_sortindx = bcandslengths_sortindx[:,::-1]
+      for i in range(numcands):
+        bcands[i] = bcands[i][:,bcandslengths_sortindx[i],:]
+      bcandslengths = bcandslengths[bcandslengths_sortindx]
+
+      pdb.set_trace()
+
+      # now make the queries and cands a packed sequence
+      bqueries = torch.nn.utils.rnn.pack_padded_sequence(bqueries,bquerieslengths)
+      bcands = [torch.nn.utils.rnn.pack_padded_sequence(bcands[i],bcandslengths[i]) 
+                  for i in range(numcands)]
 
       py = model.forward(bqueries,bcands)
       loss = criterion.forward(py,blabels)
@@ -230,6 +256,9 @@ def train_driver(edit_ratio=0.4): # CHOO CHOO
   with open(dname+"_formatted.pk","rb") as f:
     dataset = pk.load(f)
 
+  with open(dname+"_formatted_lenths.pk","rb") as f:
+    lengths = pk.load(f)
+
   model = Deep_Classifier(hdim=10,edit_ratio=edit_ratio).cuda()
 
   optimizer = torch.optim.SGD(model.parameters(),lr=0.01,momentum=0.9)
@@ -239,6 +268,7 @@ def train_driver(edit_ratio=0.4): # CHOO CHOO
   valacc = train_loop(model,
                         optimizer,
                         dataset,
+                        lengths,
                         maxpatience = 200,
                         bsize=32,
                         verbose=True,
