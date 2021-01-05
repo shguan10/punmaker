@@ -26,9 +26,10 @@ class Deep_Classifier(torch.nn.Module):
     self.numlayers = numlayers
     self.hdim = hdim
 
-  def forward(self,query,cands):
+  def forward(self,query,cands,bcandslengths_invsortindx=None):
     # query has "shape" (wordlen,bsize,indim)
     # cands has "shape" (numcands,wordlen,bsize,indim)
+    # bcandslengths_invsortindx has shape (numcands,bsize) and tells you how the batches were shuffled around
     # this function returns shape (bsize,numcands)
     _,qenc = self.f(query)
 
@@ -58,6 +59,13 @@ class Deep_Classifier(torch.nn.Module):
     prod = prod.sum(2)
 
     # now prod should have shape (numcands,bsize)
+
+    if bcandslengths_invsortindx is not None:
+      numcands,bsize = bcandslengths_invsortindx.shape
+      for i in range(numcands):
+        prod[i] = prod[i,bcandslengths_invsortindx[i]]
+
+    # now prod should be sorted back into the original order
 
     return prod.transpose(0,1)
 
@@ -136,17 +144,9 @@ def train_loop(model,optimizer,dataset,lengths,maxpatience = 20,bsize=32,verbose
       bquerieslengths = trainlengths[0][batch]
       bcandslengths = trainlengths[1][:,batch]
 
-
       # sort the batch by length, in decreasing order
       bquerieslengths_sortindx = np.argsort(bquerieslengths)
       bquerieslengths_sortindx = np.array(bquerieslengths_sortindx[::-1])
-      # get the inverse array
-      inverse_sortindx = np.empty(bquerieslengths_sortindx.shape).astype(bquerieslengths_sortindx.dtype)
-      for ind,val in enumerate(bquerieslengths_sortindx):
-        inverse_sortindx[val]=ind
-      # make sure the labels are in the same order
-      blabels = torch.tensor([inverse_sortindx[ind] for ind in blabels])
-
       bqueries = bqueries[:,bquerieslengths_sortindx,:]
       bquerieslengths = bquerieslengths[bquerieslengths_sortindx]
 
@@ -161,8 +161,14 @@ def train_loop(model,optimizer,dataset,lengths,maxpatience = 20,bsize=32,verbose
       bcands = [torch.nn.utils.rnn.pack_padded_sequence(bcands[i],bcandslengths[i]) 
                   for i in range(numcands)]
 
+      # to deal with the blabels being out of order, we do this
+      bcandslengths_invsortindx = np.empty(bcandslengths_sortindx.shape).astype(bcandslengths_sortindx.dtype)
+      for candind in range(numcands):
+        for ind,v in enumerate(bcandslengths_sortindx[candind]):
+          bcandslengths_invsortindx[candind,v] = ind
+
       # pdb.set_trace()
-      py = model.forward(bqueries,bcands)
+      py = model.forward(bqueries,bcands,bcandslengths_invsortindx)
       loss = criterion.forward(py,blabels)
       epochloss+=loss
 
