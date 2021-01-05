@@ -68,64 +68,28 @@ class Deep_Classifier(torch.nn.Module):
     self.num2char = num2char
     self.char2num = char2num
 
-  def encode(self,wipa):
-    # wipa has been translated but not one-hot encoded
-    totalchars = len(self.char2num)
-
-    wipatranslated = [onehot(charnum,totalchars) for charnum in wipa]
-
-    wipatranslated = torch.tensor(wipatranslated).float()
-
-    # wipatranslated has shape (wordlen,totalchars)
-
-    wipatranslated = wipatranslated.reshape(-1,1,totalchars)
-
+  def encode(self,wipas):
+    # assumes wipas has "shape" (maxlen,numwords,totalchars)
     wresult = None
 
     with torch.no_grad():
-      wipaf = self.f(wipatranslated)[1].cpu().numpy()
-      wipaf = wipaf.reshape((self.numlayers,1,-1,self.hdim))
-      wipaf = wipaf[-1,0,:,:].flatten()
-      
-      wipag = self.g(wipatranslated)[1].cpu().numpy()
-      wipag = wipag.reshape((self.numlayers,1,-1,self.hdim))
-      wipag = wipag[-1,0,:,:].flatten()
-      
-    wresult = np.concatenate((wipaf,wipag))
-    return wresult
-
-  def bulkencode(self,wipas):
-    # assumes wipas has shape (dataset_size,wordlen)
-    # ie wipas is zeropadded but not one-hot encoded
-    totalchars = len(self.char2num)
-
-    wipastranslated = [[onehot(charnum,totalchars) for charnum in wipa] for wipa in wipas]
-
-    wipastranslated = torch.tensor(wipastranslated).float()
-
-    # wipastranslated has shape (dataset_size,wordlen,totalchars)
-    wipastranslated = wipastranslated.transpose(0,1)
-
-    wresult = None
-
-    with torch.no_grad():
-      wipaf = self.f(wipastranslated)[1].cpu().numpy()
+      wipaf = self.f(wipas)[1].cpu().numpy()
       wipaf = wipaf.reshape((self.numlayers,1,-1,self.hdim))
       wipaf = wipaf[-1,0,:,:]
 
-      wipag = self.g(wipastranslated)[1].cpu().numpy()
+      wipag = self.g(wipas)[1].cpu().numpy()
       wipag = wipag.reshape((self.numlayers,1,-1,self.hdim))
       wipag = wipag[-1,0,:,:]
 
-    print(wipaf.shape,wipag.shape)
+    # print(wipaf.shape,wipag.shape)
 
     wresult = np.concatenate((wipaf,wipag),axis=1)
-    print(wresult.shape)
+    # print(wresult.shape)
 
     # make sure to normalize each encoding by its l2 norm
     l2norms = (((wresult**2).sum(axis=1))**0.5).reshape(-1,1)
 
-    pdb.set_trace()
+    # pdb.set_trace()
 
     return wresult / l2norms
 
@@ -176,6 +140,13 @@ def train_loop(model,optimizer,dataset,lengths,maxpatience = 20,bsize=32,verbose
       # sort the batch by length, in decreasing order
       bquerieslengths_sortindx = np.argsort(bquerieslengths)
       bquerieslengths_sortindx = np.array(bquerieslengths_sortindx[::-1])
+      # get the inverse array
+      inverse_sortindx = np.empty(bquerieslengths_sortindx.shape).astype(bquerieslengths_sortindx.dtype)
+      for ind,val in enumerate(bquerieslengths_sortindx):
+        inverse_sortindx[val]=ind
+      # make sure the labels are in the same order
+      blabels = torch.tensor([inverse_sortindx[ind] for ind in blabels])
+
       bqueries = bqueries[:,bquerieslengths_sortindx,:]
       bquerieslengths = bquerieslengths[bquerieslengths_sortindx]
 
@@ -204,6 +175,7 @@ def train_loop(model,optimizer,dataset,lengths,maxpatience = 20,bsize=32,verbose
     avgsampleloss = epochloss/numtrain
 
     with torch.no_grad():
+      # TODO the validation needs to be packed seq as well
       vqueries = val[0].cuda()
       vcands = val[1].cuda()
       vlabels = val[2].cuda()
@@ -272,8 +244,10 @@ def train_driver(edit_ratio=0.4): # CHOO CHOO
                         numepochs=200,
                         datastore=datastore)
 
+  mname = "model_"+str(edit_ratio)+"_valacc_"+str(valacc)
+  torch.save(model.state_dict(),"models/"+mname+".pt")
+  with open("trainplots/"+mname+".pk","wb") as f: pk.dump(datastore,f)
 
-  torch.save(model.state_dict(),"models/model_"+str(edit_ratio)+"_valacc_"+str(valacc)+".pt")
 
 if __name__ == '__main__':
   train_driver(edit_ratio=0.4)
