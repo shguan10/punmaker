@@ -107,6 +107,34 @@ def check_num_correct(py,by):
   (bsize,numcands) = py.shape
   return sum(py.argmax(1)==by)
 
+def getpackedstuff(bqueries,bcands,bquerieslengths,bcandslengths):
+  numcands = bcands.shape[0]
+
+  # sort the batch by length, in decreasing order
+  bquerieslengths_sortindx = np.argsort(bquerieslengths)
+  bquerieslengths_sortindx = np.array(bquerieslengths_sortindx[::-1])
+  bqueries = bqueries[:,bquerieslengths_sortindx,:]
+  bquerieslengths = bquerieslengths[bquerieslengths_sortindx]
+
+  bcandslengths_sortindx = np.argsort(bcandslengths,axis=-1)
+  bcandslengths_sortindx = np.array(bcandslengths_sortindx[:,::-1])
+  for i in range(numcands):
+    bcands[i] = bcands[i,:,bcandslengths_sortindx[i],:]
+    bcandslengths[i] = bcandslengths[i,bcandslengths_sortindx[i,:]]
+
+  # now make the queries and cands a packed sequence
+  bqueries = torch.nn.utils.rnn.pack_padded_sequence(bqueries,bquerieslengths)
+  bcands = [torch.nn.utils.rnn.pack_padded_sequence(bcands[i],bcandslengths[i]) 
+              for i in range(numcands)]
+
+  # to deal with the blabels being out of order, we do this
+  bcandslengths_invsortindx = np.empty(bcandslengths_sortindx.shape).astype(bcandslengths_sortindx.dtype)
+  for candind in range(numcands):
+    for ind,v in enumerate(bcandslengths_sortindx[candind]):
+      bcandslengths_invsortindx[candind,v] = ind
+
+  return bqueries,bcands,bcandslengths_invsortindx
+
 def train_loop(model,optimizer,dataset,lengths,maxpatience = 20,bsize=32,verbose=False,numepochs=200,datastore=None):
   # each of the train,val,test sets must be tuples of queries,cands,labels
   # queries has shape (wordlen,dataset_size,indim)
@@ -115,8 +143,6 @@ def train_loop(model,optimizer,dataset,lengths,maxpatience = 20,bsize=32,verbose
   # lengths is basically the same shape as dataset but there's no labels lengths
   train,val,test = dataset
   trainlengths,vallengths,testlengths = lengths
-
-  numcands = train[1].shape[0]
 
   numtrain = len(train[2])
   numbatches = int(numtrain/bsize)
@@ -131,6 +157,7 @@ def train_loop(model,optimizer,dataset,lengths,maxpatience = 20,bsize=32,verbose
     trainacc = 0
     idxs = (np.random.rand(numbatches,bsize)*numtrain).astype(np.int64)
 
+    model.train()
     for batch in idxs:
       optimizer.zero_grad()
       bqueries = train[0][:,batch,:]
@@ -144,28 +171,8 @@ def train_loop(model,optimizer,dataset,lengths,maxpatience = 20,bsize=32,verbose
       bquerieslengths = trainlengths[0][batch]
       bcandslengths = trainlengths[1][:,batch]
 
-      # sort the batch by length, in decreasing order
-      bquerieslengths_sortindx = np.argsort(bquerieslengths)
-      bquerieslengths_sortindx = np.array(bquerieslengths_sortindx[::-1])
-      bqueries = bqueries[:,bquerieslengths_sortindx,:]
-      bquerieslengths = bquerieslengths[bquerieslengths_sortindx]
-
-      bcandslengths_sortindx = np.argsort(bcandslengths,axis=-1)
-      bcandslengths_sortindx = np.array(bcandslengths_sortindx[:,::-1])
-      for i in range(numcands):
-        bcands[i] = bcands[i,:,bcandslengths_sortindx[i],:]
-        bcandslengths[i] = bcandslengths[i,bcandslengths_sortindx[i,:]]
-
-      # now make the queries and cands a packed sequence
-      bqueries = torch.nn.utils.rnn.pack_padded_sequence(bqueries,bquerieslengths)
-      bcands = [torch.nn.utils.rnn.pack_padded_sequence(bcands[i],bcandslengths[i]) 
-                  for i in range(numcands)]
-
-      # to deal with the blabels being out of order, we do this
-      bcandslengths_invsortindx = np.empty(bcandslengths_sortindx.shape).astype(bcandslengths_sortindx.dtype)
-      for candind in range(numcands):
-        for ind,v in enumerate(bcandslengths_sortindx[candind]):
-          bcandslengths_invsortindx[candind,v] = ind
+      bqueries,bcands,bcandslengths_invsortindx = \
+        getpackedstuff(bqueries,bcands,bquerieslengths,bcandslengths)
 
       # pdb.set_trace()
       py = model.forward(bqueries,bcands,bcandslengths_invsortindx)
@@ -180,14 +187,20 @@ def train_loop(model,optimizer,dataset,lengths,maxpatience = 20,bsize=32,verbose
     trainacc /= numtrain
     avgsampleloss = epochloss/numtrain
 
+    model.eval()
     with torch.no_grad():
-      # TODO the validation needs to be packed seq as well
       vqueries = val[0].cuda()
       vcands = val[1].cuda()
       vlabels = val[2].cuda()
       numval = len(vlabels)
 
-      valps = model.forward(vqueries,vcands)
+      vquerieslengths = vallengths[0]
+      vcandslengths = vallengths[1]
+
+      vqueries,vcands,vcandslengths_invsortindx = \
+        getpackedstuff(vqueries,vcands,vquerieslengths,vcandslengths)
+
+      valps = model.forward(vqueries,vcands,vcandslengths_invsortindx)
       valloss = criterion(valps,vlabels)/numval
       # pdb.set_trace()
       valacc = check_num_correct(valps.cpu(),vlabels.cpu()).item()/numval
@@ -199,7 +212,14 @@ def train_loop(model,optimizer,dataset,lengths,maxpatience = 20,bsize=32,verbose
         tcands = test[1].cuda()
         tlabels = test[2].cuda()
 
-        testps = model.forward(tqueries,tcands)
+        tquerieslengths = testlengths[0]
+        tcandslengths = testlengths[1]
+
+        tqueries,tcands,tcandslengths_invsortindx = \
+          getpackedstuff(tqueries,tcands,tquerieslengths,tcandslengths)
+
+        testps = model.forward(tqueries,tcands,tcandslengths_invsortindx)
+
         testloss = criterion(testps,tlabels)/numtest
         testacc = check_num_correct(testps.cpu(),test[2].cpu()).item()/numtest
 
@@ -247,7 +267,7 @@ def train_driver(edit_ratio=0.4): # CHOO CHOO
                         maxpatience = 200,
                         bsize=32,
                         verbose=True,
-                        numepochs=200,
+                        numepochs=400,
                         datastore=datastore)
 
   mname = "model_"+str(edit_ratio)+"_valacc_"+str(valacc)
